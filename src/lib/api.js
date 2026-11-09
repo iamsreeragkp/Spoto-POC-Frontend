@@ -14,7 +14,7 @@ async function request(path, { method = 'GET', body, params } = {}) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error('Cannot reach the server. Is the backend running on port 4000?');
+    throw new Error('Cannot reach the server. It may be waking up, so wait a minute and try again.');
   }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);

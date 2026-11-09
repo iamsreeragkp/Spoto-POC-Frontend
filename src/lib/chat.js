@@ -33,7 +33,7 @@ export function streamChat({ message, conversationId, onStatus, onToken, onResul
       const body = JSON.parse(e.data);
       onError({ status: body.status, message: chatErrorText(body.status), detail: body.error });
     } else {
-      onError({ status: 0, message: 'Cannot reach the server. Is the backend running on port 4000?' });
+      onError({ status: 0, message: 'Cannot reach the server. It may be waking up, so wait a minute and try again.' });
     }
   });
 

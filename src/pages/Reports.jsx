@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, ChevronRight, Search, Shield, X } from 'lucide-react';
+import { ArrowDown, CirclePlus, Search, SlidersHorizontal } from 'lucide-react';
 import { usePlayersById, useReports, useStats } from '../lib/queries.js';
-import { RECOMMENDATIONS, fmtDate, recTone } from '../lib/constants.js';
-import { Avatar, Pagination, RecBadge, ScoreBadge, Skeleton } from '../components/ui.jsx';
+import { RECOMMENDATIONS } from '../lib/constants.js';
+import { Pagination, Skeleton } from '../components/ui.jsx';
 
 const LIMIT = 15;
 const SORTS = [
@@ -66,91 +66,92 @@ export default function Reports() {
   const error = reportsQuery.isError ? reportsQuery.error.message : null;
   const loading = reportsQuery.isFetching;
 
+  const [showFilters, setShowFilters] = useState(false);
+  const sortHead = (key, label) => (
+    <th className="sortable" onClick={() => update(sortBy === key ? { order: order === 'asc' ? 'desc' : 'asc' } : { sortBy: key, order: 'asc' })}>
+      {label} <ArrowDown size={12} className={sortBy === key && order === 'asc' ? 'flip' : ''} />
+    </th>
+  );
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>Player reports</h1>
-          <p className="muted">Scouting assessments across all matches and players.</p>
-        </div>
-      </div>
+      <h1>Published Assessment Reports</h1>
 
-      <div className="kpis">
-        <Kpi label="Reports" value={stats?.counts.reports} />
-        <Kpi label="Players" value={stats?.counts.players} />
-        <Kpi label="Scouts" value={stats?.counts.scouts} />
-        <Kpi label="Average score" value={stats ? avg : undefined} suffix="/ 10" />
-      </div>
-
-      <div className="card toolbar">
+      <div className="list-bar">
         <div className="search">
           <Search size={16} />
-          <input
-            placeholder="Search player, scout, comment, event…"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-          />
-          {searchText && (
-            <button className="icon-btn" aria-label="Clear search" onClick={() => setSearchText('')}>
-              <X size={14} />
-            </button>
-          )}
+          <input placeholder="Search..." value={searchText} onChange={(e) => setSearchText(e.target.value)} />
         </div>
-        <label className="select">
-          <span>Min score</span>
-          <select value={minOverallScore} onChange={(e) => update({ minOverallScore: e.target.value })}>
-            <option value="">Any</option>
-            {[3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}+</option>)}
-          </select>
-        </label>
-        <label className="select">
-          <span>Sort by</span>
-          <select value={sortBy} onChange={(e) => update({ sortBy: e.target.value })}>
-            {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-        </label>
-        <button
-          className="btn btn-ghost"
-          onClick={() => update({ order: order === 'asc' ? 'desc' : 'asc' })}
-          title={order === 'asc' ? 'Ascending' : 'Descending'}
-        >
-          {order === 'asc' ? <ArrowUpNarrowWide size={16} /> : <ArrowDownWideNarrow size={16} />}
-          {order === 'asc' ? 'Asc' : 'Desc'}
-        </button>
-      </div>
-
-      <div className="filter-chips">
-        <button className={`fchip ${!recommendation ? 'on' : ''}`} onClick={() => update({ recommendation: '' })}>
-          All
-        </button>
-        {RECOMMENDATIONS.map((r) => (
-          <button
-            key={r}
-            className={`fchip tone-${recTone(r)} ${recommendation === r ? 'on' : ''}`}
-            onClick={() => update({ recommendation: recommendation === r ? '' : r })}
-          >
-            {r}
-            {recCount(r) != null && <b>{recCount(r)}</b>}
+        <div className="bar-right">
+          <button className="bulk"><CirclePlus size={20} /> BULK UPLOAD</button>
+          <button className="filter-btn" aria-label="Filters" onClick={() => setShowFilters((v) => !v)}>
+            <SlidersHorizontal size={16} />
           </button>
-        ))}
+        </div>
       </div>
 
-      <div className="card list">
-        <div className="row row-head">
-          <div>Player</div>
-          <div>Match</div>
-          <div>Scout</div>
-          <div className="center">Scores</div>
-          <div>Recommendation</div>
-          <div />
+      {showFilters && (
+        <div className="filter-panel">
+          <label className="select"><span>Min score</span>
+            <select value={minOverallScore} onChange={(e) => update({ minOverallScore: e.target.value })}>
+              <option value="">Any</option>
+              {[3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}+</option>)}
+            </select>
+          </label>
+          <label className="select"><span>Recommendation</span>
+            <select value={recommendation} onChange={(e) => update({ recommendation: e.target.value })}>
+              <option value="">All</option>
+              {RECOMMENDATIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
         </div>
+      )}
 
-        {loading && !rows.length && Array.from({ length: 6 }, (_, i) => (
-          <div className="row" key={i}>
-            <Skeleton h={40} /><Skeleton h={40} /><Skeleton h={20} /><Skeleton h={40} /><Skeleton h={24} /><span />
-          </div>
-        ))}
+      <div className={`table-wrap ${loading && rows.length ? 'fading' : ''}`}>
+        <table className="dtable">
+          <thead>
+            <tr>
+              <th className="cb"><input type="checkbox" aria-label="Select all" /></th>
+              <th>Color</th>
+              {sortHead('player', 'Player Name')}
+              <th>Gender <ArrowDown size={12} /></th>
+              <th>Jersey Number <ArrowDown size={12} /></th>
+              {sortHead('date', 'Publish Date')}
+              <th>Position</th>
+              {sortHead('potentialScore', 'Potential Score')}
+              <th>Age Group</th>
+              {sortHead('overallScore', 'Overall Score')}
+              <th>Team</th>
+              <th>Recommendations</th>
+              {sortHead('scout', 'Scout Name')}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const p = players[r.player_id];
+              return (
+                <tr key={r.id}>
+                  <td className="cb"><input type="checkbox" aria-label="Select row" /></td>
+                  <td><span className="swatch" /></td>
+                  <td><Link className="ulink" to={`/reports/${r.id}`}>{r.player_name}</Link></td>
+                  <td>{p?.gender || ''}</td>
+                  <td>{p?.jersey_number != null ? <Link className="ulink" to={`/reports/${r.id}`}>{p.jersey_number}</Link> : ''}</td>
+                  <td>{fmt(r.report_date)}</td>
+                  <td>{r.player_position || ''}</td>
+                  <td>{r.overall_potential_score ?? ''}</td>
+                  <td>{r.player_age_group || ''}</td>
+                  <td>{r.overall_score ?? ''}</td>
+                  <td>{p?.team_name || ''}</td>
+                  <td>{r.recommendation || ''}</td>
+                  <td>{r.scout_name || ''}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
 
+        {loading && !rows.length && <div className="empty"><Skeleton h={24} w={300} /></div>}
         {error && (
           <div className="empty">
             <h3>Couldn’t load reports</h3>
@@ -158,57 +159,12 @@ export default function Reports() {
             <button className="btn" onClick={() => reportsQuery.refetch()}>Retry</button>
           </div>
         )}
-
         {!loading && !error && !rows.length && (
           <div className="empty">
             <h3>No reports found</h3>
-            <p className="muted">Try adjusting your search or filters.</p>
-            {filtered && (
-              <button className="btn" onClick={() => { setSearchText(''); setSp({}, { replace: true }); }}>
-                Clear filters
-              </button>
-            )}
+            {filtered && <button className="btn" onClick={() => { setSearchText(''); setSp({}, { replace: true }); }}>Clear filters</button>}
           </div>
         )}
-
-        <div className={loading && rows.length ? 'fading' : ''}>
-          {rows.map((r) => {
-            const p = players[r.player_id];
-            return (
-              <Link to={`/reports/${r.id}`} className="row row-item" key={r.id}>
-                <div className="cell-player">
-                  <Avatar name={r.player_name} />
-                  <div className="stack">
-                    <strong>{r.player_name}</strong>
-                    <span className="meta">
-                      {r.player_position || 'No position'}
-                      {r.player_age_group && <> · b. {r.player_age_group}</>}
-                    </span>
-                    <span className="meta">
-                      {p?.team_name && <><Shield size={12} /> {p.team_name}</>}
-                      {p?.jersey_number != null && <> · #{p.jersey_number}</>}
-                      {p?.strong_foot && <> · {p.strong_foot}</>}
-                    </span>
-                  </div>
-                </div>
-                <div className="stack" data-label="Match">
-                  <span>{r.home_team && r.away_team ? `${r.home_team} – ${r.away_team}` : r.event || '—'}</span>
-                  <span className="meta">{fmtDate(r.match_date || r.report_date)}</span>
-                </div>
-                <div className="stack" data-label="Scout">
-                  <span>{r.scout_name || '—'}</span>
-                  <span className="meta">{fmtDate(r.report_date)}</span>
-                </div>
-                <div className="scores">
-                  <ScoreBadge value={r.overall_score} label="Overall" />
-                  <ScoreBadge value={r.overall_potential_score} label="Potential" />
-                </div>
-                <div><RecBadge value={r.recommendation} /></div>
-                <ChevronRight className="chev" size={18} />
-              </Link>
-            );
-          })}
-        </div>
       </div>
 
       {pagination && (
@@ -220,15 +176,6 @@ export default function Reports() {
           onPage={(p) => { update({ page: p }, false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         />
       )}
-    </div>
-  );
-}
-
-function Kpi({ label, value, suffix }) {
-  return (
-    <div className="card kpi">
-      <span className="muted">{label}</span>
-      {value === undefined ? <Skeleton h={28} w={70} /> : <strong>{value}{suffix && <small> {suffix}</small>}</strong>}
     </div>
   );
 }

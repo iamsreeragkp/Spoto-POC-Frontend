@@ -7,25 +7,39 @@ import { ScoreBadge } from './ui.jsx';
 const SUGGESTIONS = [
   'How many players per position?',
   'Find players with ball-movement or moving with the ball',
+  'Which players show leadership?',
   'How many players live within 1 hour from Ikast?',
-  'Which player has the best scout comment?',
+  'Tell me about Player 12',
+  'What can you do?',
 ];
 
 const WELCOME = {
   id: 'welcome',
   role: 'assistant',
-  text: 'Hi! I’m your scouting assistant. Ask me about players, reports or scouts — for example, counts, lists or comparisons.',
+  text: 'Hi! I’m your scouting assistant. Ask me about players, reports or scouts — counts, lists, statistics, what scouts wrote, player profiles or comparisons — or just ask a football question.',
 };
 
 let seq = 0;
 const nextId = () => `m${++seq}`;
 
-/** Turns "#14" mentions (comment analysis) into links to that report. */
+/** Turns "#14" mentions into links to that report and **text** into bold. */
 function Linked({ text }) {
-  return text.split(/(#\d+)/g).map((part, i) =>
-    /^#\d+$/.test(part)
-      ? <Link key={i} className="ref" to={`/reports/${part.slice(1)}`}>{part}</Link>
-      : part
+  return text.split(/(#\d+|\*\*[^*\n]+\*\*)/g).map((part, i) => {
+    if (/^#\d+$/.test(part)) return <Link key={i} className="ref" to={`/reports/${part.slice(1)}`}>{part}</Link>;
+    if (/^\*\*[^*\n]+\*\*$/.test(part)) return <strong key={i}>{part.slice(2, -2)}</strong>;
+    return part;
+  });
+}
+
+/** Evidence for a match: the scout sentence / keyword hit / tag. Keyword hits mark the word with **…**. */
+function MatchSnippet({ match }) {
+  if (!match?.text) return null;
+  return (
+    <span className="pcard-match" title={match.source === 'meaning' ? 'Matched by meaning' : match.source === 'tag' ? 'Matched tag' : 'Matched word'}>
+      “{match.text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+        /^\*\*[^*]+\*\*$/.test(part) ? <mark key={i}>{part.slice(2, -2)}</mark> : part)}”
+      {match.report_date && <small> · {match.report_date}</small>}
+    </span>
   );
 }
 
@@ -41,7 +55,9 @@ function PlayerCard({ p }) {
           {p.drive_minutes != null && <em>{Math.round(Number(p.drive_minutes))} min drive</em>}
           {p.strong_foot && <em>{p.strong_foot} foot</em>}
           {p.father_height_mid && <em>Father ~{Math.round(Number(p.father_height_mid))} cm</em>}
+          {p.score_change != null && p.score_change !== 0 && <em>{p.score_change > 0 ? '+' : ''}{p.score_change} since first report</em>}
         </span>
+        <MatchSnippet match={p.match} />
       </div>
       <div className="pcard-scores">
         <ScoreBadge value={p.overall_score} size="sm" />
@@ -51,15 +67,18 @@ function PlayerCard({ p }) {
   );
 }
 
+/** Bars for "per X" answers: counts, or the statistic (`value`) for aggregates such as "average score per position". */
 function Groups({ groups }) {
-  const max = Math.max(...groups.map((g) => g.count), 1);
+  const val = (g) => (g.value != null ? Number(g.value) : g.count);
+  const max = Math.max(...groups.map(val), 1);
+  const fmt = (g) => (g.value != null ? Number(g.value).toFixed(Math.abs(g.value) >= 100 ? 0 : 2) : g.count);
   return (
     <div className="groups">
       {groups.map((g) => (
-        <div key={String(g.key)} className="grp">
+        <div key={String(g.key)} className="grp" title={g.value != null ? `${g.count} with a recorded value` : undefined}>
           <span>{g.key ?? 'Not recorded'}</span>
-          <div><i style={{ width: `${(g.count / max) * 100}%` }} /></div>
-          <b>{g.count}</b>
+          <div><i style={{ width: `${(val(g) / max) * 100}%` }} /></div>
+          <b>{fmt(g)}</b>
         </div>
       ))}
     </div>
@@ -85,7 +104,7 @@ function AssistantMessage({ m }) {
     <div className="bubble-col">
       <div className={`bubble ${m.error ? 'bubble-error' : ''}`}>
         {m.error && <AlertTriangle size={14} />}
-        <span className="answer">{m.intent === 'comment_analysis' ? <Linked text={m.text} /> : m.text}</span>
+        <span className="answer"><Linked text={m.text || ''} /></span>
       </div>
 
       {m.notes?.length > 0 && (
