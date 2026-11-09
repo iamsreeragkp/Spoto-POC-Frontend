@@ -167,9 +167,7 @@ export default function ReportDetail() {
                     />
                   </>
                 ) : splitTags(report[c.key]).length ? (
-                  <div className="chips">
-                    {splitTags(report[c.key]).map((t) => <span className="chip" key={t}>{t}</span>)}
-                  </div>
+                  <p className="comment">{splitTags(report[c.key]).join(', ')}</p>
                 ) : (
                   <span className="muted">Nothing recorded</span>
                 )}
