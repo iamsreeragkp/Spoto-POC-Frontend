@@ -2,17 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowDown, CirclePlus, Search, SlidersHorizontal } from 'lucide-react';
 import { usePlayersById, useReports, useStats } from '../lib/queries.js';
-import { RECOMMENDATIONS } from '../lib/constants.js';
+import { RECOMMENDATIONS, reportPath } from '../lib/constants.js';
 import { Pagination, Skeleton } from '../components/ui.jsx';
 
 const LIMIT = 15;
-const SORTS = [
-  { value: 'date', label: 'Report date' },
-  { value: 'overallScore', label: 'Overall score' },
-  { value: 'potentialScore', label: 'Potential score' },
-  { value: 'player', label: 'Player name' },
-  { value: 'scout', label: 'Scout' },
-];
 
 function useDebounced(value, ms = 300) {
   const [v, setV] = useState(value);
@@ -23,7 +16,9 @@ function useDebounced(value, ms = 300) {
   return v;
 }
 
-export default function Reports() {
+/** Published reports list. type = 'assessment' (scout, one match) or 'feedback' (coach, a period). */
+export default function Reports({ type = 'assessment' }) {
+  const feedback = type === 'feedback';
   const [sp, setSp] = useSearchParams();
   const page = Number(sp.get('page') || 1);
   const recommendation = sp.get('recommendation') || '';
@@ -38,7 +33,7 @@ export default function Reports() {
   const { data: stats } = useStats();
   const { data: players = {} } = usePlayersById();
   const reportsQuery = useReports({
-    page, limit: LIMIT, search: urlSearch, recommendation, minOverallScore, sortBy, order,
+    type, page, limit: LIMIT, search: urlSearch, recommendation: feedback ? '' : recommendation, minOverallScore, sortBy, order,
   });
 
   const update = (patch, resetPage = true) => {
@@ -53,13 +48,7 @@ export default function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
 
-  const avg = useMemo(() => {
-    const rows = stats?.byOverallScore || [];
-    const n = rows.reduce((a, r) => a + r.count, 0);
-    return n ? (rows.reduce((a, r) => a + r.overall_score * r.count, 0) / n).toFixed(1) : '–';
-  }, [stats]);
-
-  const recCount = (name) => stats?.byRecommendation.find((r) => r.recommendation === name)?.count;
+  const total = useMemo(() => (feedback ? stats?.counts?.feedback_reports : stats?.counts?.assessment_reports), [stats, feedback]);
   const filtered = urlSearch || recommendation || minOverallScore;
   const rows = reportsQuery.data?.data ?? [];
   const pagination = reportsQuery.data?.pagination;
@@ -73,10 +62,12 @@ export default function Reports() {
     </th>
   );
   const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+  const period = (r) => (r.period_start || r.period_end ? `${fmt(r.period_start) || '…'} – ${fmt(r.period_end) || '…'}` : '');
+  const ageGroup = (r) => r.player_age_group || r.player_age_group_label || '';
 
   return (
     <div className="page">
-      <h1>Published Assessment Reports</h1>
+      <h1>Published {feedback ? 'Feedback' : 'Assessment'} Reports{total != null ? <span className="muted"> ({total})</span> : null}</h1>
 
       <div className="list-bar">
         <div className="search">
@@ -99,12 +90,14 @@ export default function Reports() {
               {[3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}+</option>)}
             </select>
           </label>
-          <label className="select"><span>Recommendation</span>
-            <select value={recommendation} onChange={(e) => update({ recommendation: e.target.value })}>
-              <option value="">All</option>
-              {RECOMMENDATIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </label>
+          {!feedback && (
+            <label className="select"><span>Recommendation</span>
+              <select value={recommendation} onChange={(e) => update({ recommendation: e.target.value })}>
+                <option value="">All</option>
+                {RECOMMENDATIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+          )}
         </div>
       )}
 
@@ -117,33 +110,36 @@ export default function Reports() {
               {sortHead('player', 'Player Name')}
               <th>Gender <ArrowDown size={12} /></th>
               <th>Jersey Number <ArrowDown size={12} /></th>
-              {sortHead('date', 'Publish Date')}
+              {sortHead('date', feedback ? 'Report Date' : 'Publish Date')}
+              {feedback && <th>Period</th>}
               <th>Position</th>
-              {sortHead('potentialScore', 'Potential Score')}
+              {!feedback && sortHead('potentialScore', 'Potential Score')}
               <th>Age Group</th>
               {sortHead('overallScore', 'Overall Score')}
               <th>Team</th>
-              <th>Recommendations</th>
-              {sortHead('scout', 'Scout Name')}
+              {!feedback && <th>Recommendations</th>}
+              {sortHead('scout', feedback ? 'Coach' : 'Scout Name')}
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
               const p = players[r.player_id];
+              const to = reportPath(r);
               return (
                 <tr key={r.id}>
                   <td className="cb"><input type="checkbox" aria-label="Select row" /></td>
                   <td><span className="swatch" /></td>
-                  <td><Link className="ulink" to={`/reports/${r.id}`}>{r.player_name}</Link></td>
+                  <td><Link className="ulink" to={to}>{r.player_name}</Link></td>
                   <td>{p?.gender || ''}</td>
-                  <td>{p?.jersey_number != null ? <Link className="ulink" to={`/reports/${r.id}`}>{p.jersey_number}</Link> : ''}</td>
+                  <td>{p?.jersey_number != null ? <Link className="ulink" to={to}>{p.jersey_number}</Link> : ''}</td>
                   <td>{fmt(r.report_date)}</td>
+                  {feedback && <td>{period(r)}</td>}
                   <td>{r.player_position || ''}</td>
-                  <td>{r.overall_potential_score ?? ''}</td>
-                  <td>{r.player_age_group || ''}</td>
+                  {!feedback && <td>{r.overall_potential_score ?? ''}</td>}
+                  <td>{ageGroup(r)}</td>
                   <td>{r.overall_score ?? ''}</td>
                   <td>{p?.team_name || ''}</td>
-                  <td>{r.recommendation || ''}</td>
+                  {!feedback && <td>{r.recommendation || ''}</td>}
                   <td>{r.scout_name || ''}</td>
                 </tr>
               );

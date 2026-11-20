@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, CalendarDays, Footprints, Pencil, Ruler, Save, Shield, Trash2, User, X,
 } from 'lucide-react';
@@ -8,8 +8,8 @@ import {
   useTagSuggestions, useUpdateReport,
 } from '../lib/queries.js';
 import {
-  CATEGORIES, EDITABLE_FIELDS, HEIGHTS, RECOMMENDATIONS, STAGES,
-  fmtDate, joinTags, splitTags,
+  CATEGORIES, CATEGORY_COMMENTS, EDITABLE_FIELDS, FEEDBACK_CATEGORIES, HEIGHTS, RECOMMENDATIONS, STAGES,
+  fmtDate, joinTags, reportPath, splitTags,
 } from '../lib/constants.js';
 import { Avatar, RecBadge, ScoreBadge, ScorePicker, Skeleton, TagInput } from '../components/ui.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -19,6 +19,7 @@ const pick = (r) => Object.fromEntries(EDITABLE_FIELDS.map((k) => [k, r[k] ?? nu
 export default function ReportDetail() {
   const { id } = useParams();
   const nav = useNavigate();
+  const location = useLocation();
   const toast = useToast();
 
   const [editing, setEditing] = useState(false);
@@ -38,6 +39,15 @@ export default function ReportDetail() {
   const error = loadError?.message;
 
   useEffect(() => { setEditing(false); setDraft(null); }, [id]);
+
+  // feedback reports live under /feedback-reports, assessments under /reports (chat links use /reports/<id> for both)
+  const isFb = report?.report_type === 'feedback';
+  const listPath = isFb ? '/feedback-reports' : '/reports';
+  useEffect(() => {
+    if (!report) return;
+    const want = reportPath(report);
+    if (location.pathname !== want) nav(want, { replace: true });
+  }, [report, location.pathname, nav]);
 
   const changed = useMemo(() => {
     if (!draft || !report) return {};
@@ -60,14 +70,14 @@ export default function ReportDetail() {
 
   const remove = () =>
     deleteMutation.mutate(undefined, {
-      onSuccess: () => { toast('Report deleted'); nav('/reports', { replace: true }); },
+      onSuccess: () => { toast('Report deleted'); nav(listPath, { replace: true }); },
       onError: (e) => toast(e.message, 'error'),
     });
 
   if (error) {
     return (
       <div className="page">
-        <Link to="/reports" className="back"><ArrowLeft size={16} /> All reports</Link>
+        <Link to={location.pathname.startsWith('/feedback') ? '/feedback-reports' : '/reports'} className="back"><ArrowLeft size={16} /> All reports</Link>
         <div className="card empty"><h3>Report unavailable</h3><p className="muted">{error}</p></div>
       </div>
     );
@@ -79,7 +89,7 @@ export default function ReportDetail() {
 
   return (
     <div className="page">
-      <Link to="/reports" className="back"><ArrowLeft size={16} /> All reports</Link>
+      <Link to={listPath} className="back"><ArrowLeft size={16} /> All {isFb ? 'feedback' : 'assessment'} reports</Link>
 
       <div className="detail-head card">
         <Avatar name={report.player_name} size={64} />
@@ -87,15 +97,17 @@ export default function ReportDetail() {
           <h1>{report.player_name}</h1>
           <div className="meta-row">
             {report.player_position && <span><User size={14} /> {report.player_position}</span>}
-            {report.player_age_group && <span><CalendarDays size={14} /> Born {report.player_age_group}</span>}
+            {report.player_age_group
+              ? <span><CalendarDays size={14} /> Born {report.player_age_group}</span>
+              : report.player_age_group_label && <span><CalendarDays size={14} /> {report.player_age_group_label}</span>}
             {player?.team_name && <span><Shield size={14} /> {player.team_name}</span>}
             {player?.strong_foot && <span><Footprints size={14} /> {player.strong_foot}</span>}
           </div>
-          <RecBadge value={report.recommendation} />
+          {isFb ? <span className="badge badge-blue">Feedback report</span> : <RecBadge value={report.recommendation} />}
         </div>
         <div className="head-scores">
           <ScoreBadge value={report.overall_score} label="Overall" size="lg" />
-          <ScoreBadge value={report.overall_potential_score} label="Potential" size="lg" />
+          {!isFb && <ScoreBadge value={report.overall_potential_score} label="Potential" size="lg" />}
         </div>
         <div className="head-actions">
           {editing ? (
@@ -123,12 +135,12 @@ export default function ReportDetail() {
       <div className="detail-grid">
         <div className="col">
           <section className="card">
-            <h2>Overall assessment</h2>
+            <h2>{isFb ? 'Overall feedback' : 'Overall assessment'}</h2>
             {editing ? (
               <div className="form-grid">
                 <Field label="Overall score"><ScorePicker value={v.overall_score} onChange={(x) => set('overall_score', x)} /></Field>
-                <Field label="Potential score"><ScorePicker value={v.overall_potential_score} onChange={(x) => set('overall_potential_score', x)} /></Field>
-                <Field label="Recommendation" wide>
+                {!isFb && <Field label="Potential score"><ScorePicker value={v.overall_potential_score} onChange={(x) => set('overall_potential_score', x)} /></Field>}
+                {!isFb && <Field label="Recommendation" wide>
                   <input
                     list="rec-list"
                     value={v.recommendation ?? ''}
@@ -136,7 +148,7 @@ export default function ReportDetail() {
                     placeholder="Select or type a recommendation"
                   />
                   <datalist id="rec-list">{RECOMMENDATIONS.map((r) => <option key={r} value={r} />)}</datalist>
-                </Field>
+                </Field>}
                 <Field label="Overall comment" wide>
                   <textarea
                     rows={9}
@@ -150,6 +162,28 @@ export default function ReportDetail() {
             )}
           </section>
 
+          {isFb ? (
+            <div className="cat-grid">
+              {FEEDBACK_CATEGORIES.map((c) => (
+                <section className="card cat" key={c.label}>
+                  <div className="cat-head">
+                    <h2>{c.label}</h2>
+                    {!editing && <ScoreBadge value={report[c.score]} size="sm" />}
+                  </div>
+                  {editing ? (
+                    <>
+                      <ScorePicker value={v[c.score]} onChange={(x) => set(c.score, x)} />
+                      <textarea rows={5} value={v[c.comment] ?? ''} onChange={(e) => set(c.comment, e.target.value || null)} />
+                    </>
+                  ) : report[c.comment] ? (
+                    <p className="comment">{report[c.comment]}</p>
+                  ) : (
+                    <span className="muted">Nothing recorded</span>
+                  )}
+                </section>
+              ))}
+            </div>
+          ) : (
           <div className="cat-grid">
             {CATEGORIES.map((c) => (
               <section className="card cat" key={c.key}>
@@ -165,15 +199,23 @@ export default function ReportDetail() {
                       suggestions={options.tags[c.key]}
                       onChange={(t) => set(c.key, t.length ? joinTags(t) : null)}
                     />
+                    {CATEGORY_COMMENTS[c.key] && (
+                      <textarea rows={4} placeholder="Comment" value={v[CATEGORY_COMMENTS[c.key]] ?? ''}
+                        onChange={(e) => set(CATEGORY_COMMENTS[c.key], e.target.value || null)} />
+                    )}
                   </>
-                ) : splitTags(report[c.key]).length ? (
-                  <p className="comment">{splitTags(report[c.key]).join(', ')}</p>
+                ) : splitTags(report[c.key]).length || report[CATEGORY_COMMENTS[c.key]] ? (
+                  <>
+                    {splitTags(report[c.key]).length > 0 && <p className="comment">{splitTags(report[c.key]).join(', ')}</p>}
+                    {report[CATEGORY_COMMENTS[c.key]] && <p className="comment">{report[CATEGORY_COMMENTS[c.key]]}</p>}
+                  </>
                 ) : (
                   <span className="muted">Nothing recorded</span>
                 )}
               </section>
             ))}
           </div>
+          )}
         </div>
 
         <aside className="col">
@@ -184,44 +226,62 @@ export default function ReportDetail() {
                 <Field label="Report date">
                   <input type="date" value={v.report_date?.slice(0, 10) ?? ''} onChange={(e) => set('report_date', e.target.value || null)} />
                 </Field>
-                <Field label="Scout">
+                <Field label={isFb ? 'Coach' : 'Scout'}>
                   <select value={v.scout_id ?? ''} onChange={(e) => set('scout_id', e.target.value ? Number(e.target.value) : null)}>
                     <option value="">— None —</option>
                     {withCurrent(options.scouts, v.scout_id, report.scout_name).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </Field>
-                <Field label="Match">
+                {isFb && (
+                  <>
+                    <Field label="Period from">
+                      <input type="date" value={v.period_start?.slice(0, 10) ?? ''} onChange={(e) => set('period_start', e.target.value || null)} />
+                    </Field>
+                    <Field label="Period to">
+                      <input type="date" value={v.period_end?.slice(0, 10) ?? ''} onChange={(e) => set('period_end', e.target.value || null)} />
+                    </Field>
+                  </>
+                )}
+                {!isFb && <Field label="Match">
                   <select value={v.match_id ?? ''} onChange={(e) => set('match_id', e.target.value ? Number(e.target.value) : null)}>
                     <option value="">— None —</option>
                     {withCurrent(options.matches, v.match_id, matchLabelOf(report), 'event').map((m) => (
                       <option key={m.id} value={m.id}>{m.label || matchLabel(m)}</option>
                     ))}
                   </select>
-                </Field>
-                <Field label="Stage of growth">
+                </Field>}
+                {!isFb && <Field label="Stage of growth">
                   <select value={v.stage_of_growth ?? ''} onChange={(e) => set('stage_of_growth', e.target.value || null)}>
                     <option value="">— Unknown —</option>
                     {STAGES.map((s) => <option key={s}>{s}</option>)}
                   </select>
-                </Field>
-                <Field label="Height now (cm)">
+                </Field>}
+                {!isFb && <Field label="Height now (cm)">
                   <select value={v.height_now ?? ''} onChange={(e) => set('height_now', e.target.value || null)}>
                     <option value="">— Unknown —</option>
                     {(HEIGHTS.includes(v.height_now) || !v.height_now ? HEIGHTS : [v.height_now, ...HEIGHTS]).map((h) => <option key={h}>{h}</option>)}
                   </select>
-                </Field>
+                </Field>}
               </div>
             ) : (
               <dl className="facts">
+                <Fact label="Report type" value={isFb ? 'Feedback' : 'Assessment'} />
                 <Fact label="Report date" value={fmtDate(report.report_date)} />
-                <Fact label="Scout" value={report.scout_name} />
-                <Fact label="Stage of growth" value={report.stage_of_growth} />
-                <Fact label="Height now" value={report.height_now && `${report.height_now} cm`} icon={<Ruler size={14} />} />
+                <Fact label={isFb ? 'Coach' : 'Scout'} value={report.scout_name} />
+                {isFb ? (
+                  <Fact label="Period" value={report.period_start || report.period_end ? `${report.period_start ? fmtDate(report.period_start) : '…'} – ${report.period_end ? fmtDate(report.period_end) : '…'}` : null} />
+                ) : (
+                  <>
+                    <Fact label="Stage of growth" value={report.stage_of_growth} />
+                    <Fact label="Height now" value={report.height_now && `${report.height_now} cm`} icon={<Ruler size={14} />} />
+                    <Fact label="Competition level" value={report.competition_level} />
+                  </>
+                )}
               </dl>
             )}
           </section>
 
-          <section className="card">
+          {!isFb && <section className="card">
             <h2>Match</h2>
             <dl className="facts">
               <Fact label="Event" value={report.event} />
@@ -232,12 +292,13 @@ export default function ReportDetail() {
               <Fact label="Match date" value={report.match_date && fmtDate(report.match_date)} />
             </dl>
             {editing && <p className="hint">Change the match above under “Report info”.</p>}
-          </section>
+          </section>}
 
           <section className="card">
             <h2>Player</h2>
             <dl className="facts">
               <Fact label="Name" value={report.player_name} />
+              <Fact label="Age group" value={report.player_age_group || report.player_age_group_label} />
               <Fact label="Position" value={report.player_position} />
               <Fact label="Secondary position" value={player?.secondary_position} />
               <Fact label="Team" value={player?.team_name} />
@@ -255,10 +316,10 @@ export default function ReportDetail() {
               <ul className="siblings">
                 {otherReports.map((s) => (
                   <li key={s.id}>
-                    <Link to={`/reports/${s.id}`}>
+                    <Link to={reportPath(s)}>
                       <span>
                         <strong>{fmtDate(s.report_date)}</strong>
-                        <span className="meta">{s.scout_name || 'Unknown scout'}</span>
+                        <span className="meta">{s.report_type === 'feedback' ? `Feedback · ${s.scout_name || 'unknown coach'}` : (s.scout_name || 'Unknown scout')}</span>
                       </span>
                       <ScoreBadge value={s.overall_score} size="sm" />
                     </Link>

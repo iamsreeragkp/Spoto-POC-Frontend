@@ -16,7 +16,7 @@ function Logo() {
 }
 
 const NAV = [
-  { label: 'Published Reports', icon: FileCheck2, children: [{ label: 'Assessment Reports', to: '/reports' }, { label: 'Feedback Reports' }] },
+  { label: 'Published Reports', icon: FileCheck2, children: [{ label: 'Assessment Reports', to: '/reports' }, { label: 'Feedback Reports', to: '/feedback-reports' }] },
   { label: 'Compare Players', icon: Columns2 },
   { label: 'Shadow Team', icon: Shield, children: [] },
   { label: 'Players & Teams', icon: Users, children: [] },
@@ -68,8 +68,10 @@ export default function App() {
           <main className="content">
             <Routes>
               <Route path="/" element={<Navigate to="/reports" replace />} />
-              <Route path="/reports" element={<Reports />} />
+              <Route path="/reports" element={<Reports key="assessment" type="assessment" />} />
               <Route path="/reports/:id" element={<ReportDetail />} />
+              <Route path="/feedback-reports" element={<Reports key="feedback" type="feedback" />} />
+              <Route path="/feedback-reports/:id" element={<ReportDetail />} />
               <Route path="*" element={<Navigate to="/reports" replace />} />
             </Routes>
           </main>
